@@ -5,6 +5,7 @@
 ![MySQL](https://img.shields.io/badge/MySQL_%2F_MariaDB-InnoDB-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
 ![PDO](https://img.shields.io/badge/PDO-Prepared_Statements-00758F?style=for-the-badge&logo=databricks&logoColor=white)
 ![XAMPP](https://img.shields.io/badge/XAMPP-Apache-FB7A24?style=for-the-badge&logo=xampp&logoColor=white)
+![Thunder Client](https://img.shields.io/badge/Thunder_Client-API_Testing-7C3AED?style=for-the-badge&logo=thunderbird&logoColor=white)
 
 API RESTful para gestão clínica veterinária (**Tutores** e **Pets**), desenvolvida em **PHP 8+ nativo orientado a objetos (POO)**, persistência relacional com **PDO + MySQL (`InnoDB`)** e autenticação stateful via **Bearer Token**.
 
@@ -22,8 +23,7 @@ API RESTful para gestão clínica veterinária (**Tutores** e **Pets**), desenvo
 4. **Acesse o phpMyAdmin** em [`http://localhost/phpmyadmin`](http://localhost/phpmyadmin):
    - Clique na aba **SQL** (no menu superior).
    - Copie e cole todo o conteúdo do arquivo [`banco.sql`](banco.sql) e clique em **Executar** *(o script já cria o banco `petcare`, as 4 tabelas e os dados iniciais automaticamente)*.
-5. **Acesse e teste a API** em `http://localhost/petcare/`:
-   - Para testar todas as rotas (`GET`, `POST`, `PUT`, `DELETE`), abra o arquivo [`requisicoes.http`](requisicoes.http) no VS Code com a extensão **REST Client** instalada.
+5. **Acesse e teste a API** em `http://localhost/petcare/` utilizando o **Thunder Client** ou o arquivo [`requisicoes.http`](requisicoes.http) no VS Code (veja a seção [Testando as Rotas](#-testando-as-rotas-thunder-client--rest-client)).
 
 ---
 
@@ -105,6 +105,31 @@ Na chave estrangeira `pets.tutor_id -> tutores.id`, adotou-se a política **`ON 
 | `POST` | `/pets` | `Bearer Token` | `201` *(pet criado)* | `400`, `401`, `422` |
 | `PUT` | `/pets/{id}` | `Bearer Token` | `200` *(pet atualizado)* | `400`, `401`, `404`, `422` |
 | `DELETE` | `/pets/{id}` | `Bearer Token` | `204` *(sem corpo)* | `401`, `404` |
+
+---
+
+## 🧪 Testando as Rotas (Thunder Client & REST Client)
+
+### Opção 1: Thunder Client (Interface Gráfica no VS Code)
+O [**Thunder Client**](https://www.thunderclient.com) é um cliente HTTP leve, 100% local e integrado ao VS Code, ideal para organizar coleções, gerenciar variáveis de ambiente e validar rotas com autenticação **Bearer Token** sem sair do editor.
+
+1. Instale a extensão **Thunder Client** (`rangav.vscode-thunder-client`) no VS Code.
+2. Clique no ícone do **Thunder Client** na barra lateral e crie uma **New Request**:
+   - **Base URL:** `http://localhost/petcare`
+   - **Headers:** `Content-Type: application/json`
+3. **Fluxo de Autenticação (`Bearer Token`):**
+   - Envie um `POST` para `http://localhost/petcare/login` com o corpo JSON:
+     ```json
+     {
+       "email": "admin@petcare.com.br",
+       "senha": "123456"
+     }
+     ```
+   - Copie o valor do campo `token` retornado na resposta `200 OK`.
+   - Nas rotas protegidas (`POST`, `PUT`, `DELETE` e `/logout`), acesse a aba **Auth -> Bearer** do Thunder Client e cole o token (ou configure uma variável de ambiente `{{token}}` na aba **Env**).
+
+### Opção 2: Arquivo `requisicoes.http` (Suíte de Testes Pronta)
+O repositório também inclui o arquivo [`requisicoes.http`](requisicoes.http) com 35 cenários de teste documentados (casos de sucesso e validações de erro `400`, `401`, `404`, `409` e `422`), que pode ser executado diretamente pelo **REST Client** ou importado/consultado como referência no **Thunder Client**.
 
 ---
 
