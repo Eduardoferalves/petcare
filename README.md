@@ -1,125 +1,114 @@
-# Clínica Veterinária PetCare — API REST em PHP Puro
+# 🐾 PetCare API
 
-Trabalho 1 da disciplina de Desenvolvimento Back-End (Prof. Jr) — API REST completa desenvolvida em **PHP nativo (sem frameworks)** utilizando **PDO + MySQL** (Prepared Statements), roteamento manual com expressões regulares e autenticação via **Bearer Token** com expiração em banco de dados.
+![PHP](https://img.shields.io/badge/PHP_8.2+-777BB4?style=for-the-badge&logo=php&logoColor=white)
+![POO](https://img.shields.io/badge/POO-Encapsulamento_%7C_Heran%C3%A7a_%7C_Polimorfismo-6C5CE7?style=for-the-badge)
+![MySQL](https://img.shields.io/badge/MySQL_%2F_MariaDB-InnoDB-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![PDO](https://img.shields.io/badge/PDO-Prepared_Statements-00758F?style=for-the-badge&logo=databricks&logoColor=white)
+![XAMPP](https://img.shields.io/badge/XAMPP-Apache-FB7A24?style=for-the-badge&logo=xampp&logoColor=white)
 
----
-
-## Integrantes do Grupo
-
-- **Integrante 1:** Eduardo Fernandes Alves
-- **Integrante 2:** Rafael Torres Teixeira
-
+API RESTful para gestão clínica veterinária (**Tutores** e **Pets**), desenvolvida em **PHP 8+ nativo orientado a objetos (POO)**, persistência relacional com **PDO + MySQL (`InnoDB`)** e autenticação stateful via **Bearer Token**.
 
 ---
 
-## Estrutura de Arquivos (`petcare/`)
+## 🚀 Guia Rápido de Configuração
+
+1. **Instale o XAMPP** (com suporte a PHP 8.0+ e MySQL/MariaDB).
+2. **Clone o repositório dentro da pasta `htdocs`** do XAMPP:
+   ```bash
+   cd C:\xampp\htdocs
+   git clone <url-do-repositorio> petcare
+   ```
+3. **Inicie os serviços Apache e MySQL** no painel de controle do **XAMPP Control Panel**.
+4. **Acesse o phpMyAdmin** em [`http://localhost/phpmyadmin`](http://localhost/phpmyadmin):
+   - Clique na aba **SQL** (no menu superior).
+   - Copie e cole todo o conteúdo do arquivo [`banco.sql`](banco.sql) e clique em **Executar** *(o script já cria o banco `petcare`, as 4 tabelas e os dados iniciais automaticamente)*.
+5. **Acesse e teste a API** em `http://localhost/petcare/`:
+   - Para testar todas as rotas (`GET`, `POST`, `PUT`, `DELETE`), abra o arquivo [`requisicoes.http`](requisicoes.http) no VS Code com a extensão **REST Client** instalada.
+
+---
+
+## 🔐 Credenciais de Teste (`POST /login`)
+
+Contas pré-cadastradas no [`banco.sql`](banco.sql) (hashes gerados com `password_hash('123456', PASSWORD_DEFAULT)`):
+
+| Perfil | E-mail | Senha |
+| :--- | :--- | :--- |
+| **Administrador PetCare** | `admin@petcare.com.br` | `123456` |
+| **Recepção Clínica PetCare** | `recepcao@petcare.com.br` | `123456` |
+
+---
+
+## 🏛️ Arquitetura Orientada a Objetos (POO)
+
+O projeto adota o princípio de **um arquivo por classe/interface** dentro do diretório [`src/`](src/), aplicando todos os pilares de POO em PHP 8+:
 
 ```text
 petcare/
-├── .htaccess          # Reescrita de URLs para index.php e repasse do header Authorization
-├── banco.sql          # Script idempotente (DROP/CREATE database, 4 tabelas e seeds)
-├── conexao.php        # Conexão PDO, constante OPCOES_JSON, responder(), lerCorpoJson() e formatadores
-├── autenticacao.php   # Extração do cabeçalho Bearer e função única exigirToken()
-├── validacao.php      # Validações de domínio (422 com lista acumulativa de erros)
-├── index.php          # Roteador manual ($metodo, $caminho, preg_match) e handlers das rotas
-├── requisicoes.http   # Suíte de testes para a extensão REST Client (sucesso e erros)
-├── MER_PetCare.pdf    # Especificação formal do MER e Mapeamento Relacional (Elmasri & Navathe / CEUB)
-└── README.md          # Documentação do projeto
+├── .htaccess                     # Reescrita de URLs e repasse do header Authorization
+├── banco.sql                     # Criação idempotente do banco petcare, 4 tabelas e seeds
+├── index.php                     # Front Controller / Roteador HTTP
+├── requisicoes.http              # Suíte de testes automatizados (REST Client)
+├── README.md                     # Guia rápido e documentação principal
+├── docs/
+│   └── MER.md                    # Modelagem de Dados (MER), Diagrama Mermaid e Mapeamento Relacional
+└── src/
+    ├── Serializavel.php          # Interface de contrato para serialização JSON (toArray)
+    ├── Validavel.php             # Interface de contrato para validação de domínio (validar)
+    ├── EntidadeBase.php          # Classe abstrata base (herança, protected $id, múltiplas interfaces)
+    ├── Tutor.php                 # Entidade de domínio Tutor (extends EntidadeBase)
+    ├── Pet.php                   # Entidade de domínio Pet (extends EntidadeBase)
+    ├── CredencialLogin.php       # Objeto de valor para autenticação (implements Validavel)
+    ├── RepositorioBase.php       # Classe abstrata base de persistência (protected PDO $pdo)
+    ├── TutorRepositorio.php      # Persistência CRUD de Tutores (extends RepositorioBase)
+    ├── PetRepositorio.php        # Persistência CRUD de Pets (extends RepositorioBase)
+    ├── AutenticacaoServico.php   # Gestão de sessão Bearer Token (extends RepositorioBase)
+    ├── BancoDados.php            # Classe final de conexão PDO (final class)
+    └── Http.php                  # Classe final de I/O JSON e polimorfismo HTTP (final class)
 ```
 
 ---
 
-## Especificação Formal do Banco de Dados (`MER_PetCare.pdf`)
+## 🗄️ Modelagem do Banco de Dados (MER) e Integridade
 
-A especificação formal completa da modelagem conceitual (MER), lógica (Mapeamento Relacional em 8 Passos — padrão Elmasri & Navathe / FATECS-CEUB) e física (`InnoDB`, dicionário de dados, políticas referenciais, formas normais `1FN`/`2FN`/`3FN` e engenharia de *collation*) encontra-se consolidada no documento único **[`MER_PetCare.pdf`](MER_PetCare.pdf)** na raiz do projeto, em total conformidade com a fonte da verdade (`banco.sql`).
+A documentação completa da modelagem conceitual, diagrama Entidade-Relacionamento visual, mapeamento relacional em 8 passos (Elmasri & Navathe), dicionário de dados físico e formas normais (`1FN`, `2FN`, `3FN`) está disponível em:
 
----
+👉 **[`docs/MER.md` — Especificação Formal do Banco de Dados e MER](docs/MER.md)**
 
-## Como Rodar o Projeto no XAMPP
+### Regra de Exclusão de Tutores (`ON DELETE RESTRICT`)
 
-**Requisitos:**
-
-- **XAMPP** com **PHP >= 8.0** (a API utiliza funções do PHP 8, como `str_starts_with`) e **MySQL/MariaDB**.
-- A pasta do projeto deve ficar em `C:\xampp\htdocs\petcare\` para que a URL base seja `http://localhost/petcare/` (conforme o arquivo `requisicoes.http`).
-
-1. **Iniciar os serviços no XAMPP:**
-   - Abra o **XAMPP Control Panel** e inicie os módulos **Apache** e **MySQL**.
-
-2. **Posicionar a pasta no `htdocs`:**
-   - Abra um terminal dentro de `C:\xampp\htdocs\` e clone o repositório já com o nome correto da pasta:
-     ```bash
-     cd C:\xampp\htdocs
-     git clone <url-do-repositorio> petcare
-     ```
-   - O caminho final deve ficar:
-     ```text
-     C:\xampp\htdocs\petcare\index.php
-     ```
-   - Alternativamente, copie a pasta `petcare` deste repositório para dentro de `C:\xampp\htdocs\`.
-   - A API responderá no endereço base: `http://localhost/petcare/`
-
-3. **Criar e popular o banco de dados (`banco.sql`):**
-   - Acesse o **phpMyAdmin** (`http://localhost/phpmyadmin`)
-   - *Observação:* A conexão em `conexao.php` utiliza a configuração padrão do XAMPP (`host=localhost`, `port=3306`, usuário `root` e senha vazia `''`).
-
-4. **Testar as rotas (`requisicoes.http`):**
-   - Abra o arquivo `petcare/requisicoes.http` no VS Code com a extensão **REST Client** instalada.
-   - Execute a requisição **1.1 (`POST /login`)**, copie o valor de `"token"` retornado no JSON e cole na variável `@token` no topo do arquivo `requisicoes.http`.
-   - Execute todas as demais requisições de sucesso (`200`, `201`, `204`) e de erro (`400`, `401`, `404`, `409`, `422`).
+Na chave estrangeira `pets.tutor_id -> tutores.id`, adotou-se a política **`ON DELETE RESTRICT`**:
+- **Motivo:** Proteger o prontuário clínico veterinário contra exclusões acidentais em cascata.
+- **Comportamento na API:** Tentar excluir um tutor que possui pets vinculados (`DELETE /tutores/{id}`, ex.: `id = 1`) é bloqueado pelo MySQL (erro `1451`) e retorna **`409 Conflict`**:
+  ```json
+  {
+      "detail": "Não é possível excluir tutor que possui pets vinculados"
+  }
+  ```
+- Tutores sem pets vinculados (ex.: `id = 6`) são excluídos normalmente com status **`204 No Content`**.
 
 ---
 
-## Credenciais do Usuário de Teste (Login)
+## 📡 Endpoints da API
 
-Para testar a rota `POST /login`, utilize qualquer uma das contas abaixo (cadastradas no `banco.sql` com hash gerado por `password_hash('123456', PASSWORD_DEFAULT)`):
-
-| Nome | E-mail | Senha (texto puro) |
-| :--- | :--- | :--- |
-| Administrador PetCare | `admin@petcare.com.br` | `123456` |
-| Recepção Clínica PetCare | `recepcao@petcare.com.br` | `123456` |
-
-Exemplo de corpo para `POST http://localhost/petcare/login`:
-```json
-{
-    "email": "admin@petcare.com.br",
-    "senha": "123456"
-}
-```
-
----
-
-## Decisão e Justificativa Técnica: Exclusão de Tutores (`ON DELETE RESTRICT`)
-
-Na modelagem da chave estrangeira `pets.tutor_id -> tutores.id`, o grupo adotou a regra **`ON DELETE RESTRICT`** (impedindo a exclusão de um tutor que possua pets cadastrados e retornando **`409 Conflict`**).
-
-### Justificativa:
-1. **Proteção do Histórico Clínico e Prontuários Veterinários:** Em um sistema real de clínica veterinária, excluir acidentalmente o cadastro de um tutor jamais deve apagar em cascata (`ON DELETE CASCADE`) os animais sob sua tutela, pois isso destruiria registros clínicos, histórico de peso e rastreabilidade dos pacientes atendidos.
-2. **Semântica REST e Código HTTP `409 Conflict`:** Quando um funcionário autenticado tenta executar `DELETE /tutores/{id}` para um tutor que ainda possui pets vinculados (por exemplo, o tutor `id = 1`), o MySQL bloqueia a operação pela constraint referencial (código `1451`) e a API captura a `PDOException`, respondendo:
-   ```json
-   {
-       "detail": "Não é possível excluir tutor que possui pets vinculados"
-   }
-   ```
-   com status HTTP **`409 Conflict`**, informando claramente ao cliente que é necessário transferir ou remover os pets antes de excluir o tutor.
-3. **Teste de Exclusão Bem-Sucedida (`204 No Content`):** Caso o tutor não possua pets vinculados (como o tutor de exemplo `id = 6` ou um tutor recém-cadastrado), o `DELETE /tutores/{id}` conclui normalmente com status **`204 No Content`**.
-
----
-
-## Resumo das Rotas Implementadas
-
-| Método | Rota | Token | Sucesso | Erros Tratados |
+| Método | Rota | Autenticação | Sucesso | Erros Tratados |
 | :--- | :--- | :---: | :--- | :--- |
-| `POST` | `/login` | Não | `200` com `token`, `tipo` e `expira_em` | `400`, `401`, `422` |
-| `POST` | `/logout` | **Sim** | `204` (apaga o token do banco) | `401` |
-| `GET` | `/tutores` | Não | `200` com `total` e `tutores` | — |
-| `GET` | `/tutores/{id}` | Não | `200` com os dados do tutor | `404` |
-| `GET` | `/tutores/{id}/pets` | Não | `200` com os pets do tutor | `404` |
-| `POST` | `/tutores` | **Sim** | `201` com o tutor criado e seu `id` | `400`, `401`, `409`, `422` |
-| `PUT` | `/tutores/{id}` | **Sim** | `200` com o tutor atualizado | `400`, `401`, `404`, `409`, `422` |
-| `DELETE` | `/tutores/{id}` | **Sim** | `204` (sem corpo) | `401`, `404`, `409` |
-| `GET` | `/pets` | Não | `200` com `total` e `pets` (aceita `?especie=`) | `422` (se `?especie=` inválida) |
-| `GET` | `/pets/{id}` | Não | `200` com dados do pet + `tutor_nome` (`JOIN`) | `404` |
-| `POST` | `/pets` | **Sim** | `201` com o pet criado e seu `id` | `400`, `401`, `422` |
-| `PUT` | `/pets/{id}` | **Sim** | `200` com o pet atualizado | `400`, `401`, `404`, `422` |
-| `DELETE` | `/pets/{id}` | **Sim** | `204` (sem corpo) | `401`, `404` |
-| `*` | *Qualquer outra* | — | — | `404` (`{"detail": "Rota não encontrada"}`) |
+| `POST` | `/login` | Pública | `200` (`token`, `tipo`, `expira_em`) | `400`, `401`, `422` |
+| `POST` | `/logout` | `Bearer Token` | `204` *(revoga token)* | `401` |
+| `GET` | `/tutores` | Pública | `200` (`total`, `tutores`) | — |
+| `GET` | `/tutores/{id}` | Pública | `200` *(dados do tutor)* | `404` |
+| `GET` | `/tutores/{id}/pets` | Pública | `200` *(pets do tutor)* | `404` |
+| `POST` | `/tutores` | `Bearer Token` | `201` *(tutor criado)* | `400`, `401`, `409`, `422` |
+| `PUT` | `/tutores/{id}` | `Bearer Token` | `200` *(tutor atualizado)* | `400`, `401`, `404`, `409`, `422` |
+| `DELETE` | `/tutores/{id}` | `Bearer Token` | `204` *(sem corpo)* | `401`, `404`, `409` |
+| `GET` | `/pets` | Pública | `200` *(aceita `?especie=`)* | `422` *(espécie inválida)* |
+| `GET` | `/pets/{id}` | Pública | `200` *(inclui `tutor_nome` via `JOIN`)* | `404` |
+| `POST` | `/pets` | `Bearer Token` | `201` *(pet criado)* | `400`, `401`, `422` |
+| `PUT` | `/pets/{id}` | `Bearer Token` | `200` *(pet atualizado)* | `400`, `401`, `404`, `422` |
+| `DELETE` | `/pets/{id}` | `Bearer Token` | `204` *(sem corpo)* | `401`, `404` |
+
+---
+
+## 👥 Autores
+
+- **Eduardo Fernandes Alves**
+- **Rafael Torres Teixeira**
