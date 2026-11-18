@@ -33,9 +33,19 @@ class Tutor extends EntidadeBase
         $this->emailTipoValido = $emailTipoValido;
     }
 
+    public static function criarDeRequisicao(array $dados, ?int $id = null): self
+    {
+        return self::construirDeDados($dados, $id, false);
+    }
+
     public static function criarDeArray(array $dados, ?int $id = null): self
     {
-        $idResolvido = $id ?? (isset($dados['id']) ? (int) $dados['id'] : null);
+        return self::construirDeDados($dados, $id, true);
+    }
+
+    private static function construirDeDados(array $dados, ?int $id, bool $aceitarIdArray): self
+    {
+        $idResolvido = $id ?? ($aceitarIdArray && isset($dados['id']) ? (int) $dados['id'] : null);
         $nomeValido = isset($dados['nome']) && is_string($dados['nome']);
         $telefoneValido = isset($dados['telefone']) && is_string($dados['telefone']);
         $emailValido = isset($dados['email']) && is_string($dados['email']);
@@ -78,8 +88,12 @@ class Tutor extends EntidadeBase
             $erros[] = 'O campo telefone é obrigatório e deve ter até 30 caracteres.';
         }
 
-        if (!$this->emailTipoValido || filter_var($this->email, FILTER_VALIDATE_EMAIL) === false) {
-            $erros[] = 'O campo email é obrigatório e deve ser um endereço de e-mail válido.';
+        if (
+            !$this->emailTipoValido
+            || filter_var($this->email, FILTER_VALIDATE_EMAIL) === false
+            || !preg_match('/^.{1,150}$/u', $this->email)
+        ) {
+            $erros[] = 'O campo email é obrigatório e deve ser um endereço de e-mail válido com até 150 caracteres.';
         }
 
         return $erros;

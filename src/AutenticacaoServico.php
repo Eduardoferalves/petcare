@@ -18,25 +18,33 @@ class AutenticacaoServico extends RepositorioBase
     }
 
     /**
-     * Extrai o token Bearer do cabeçalho HTTP Authorization.
+     * Lê o valor bruto do cabeçalho HTTP Authorization (ou null se ausente/vazio).
      */
-    public function extrairBearerToken(): ?string
+    private function obterCabecalhoAuthorization(): ?string
     {
-        $cabecalho = $_SERVER['HTTP_AUTHORIZATION']
-            ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-            ?? '';
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $chave) {
+            if (!empty($_SERVER[$chave]) && is_string($_SERVER[$chave]) && trim($_SERVER[$chave]) !== '') {
+                return $_SERVER[$chave];
+            }
+        }
 
-        if ($cabecalho === '' && function_exists('getallheaders')) {
+        if (function_exists('getallheaders')) {
             $headers = getallheaders();
-            foreach ($headers as $nome => $valor) {
-                if (strcasecmp($nome, 'Authorization') === 0) {
-                    $cabecalho = $valor;
-                    break;
+            if (is_array($headers)) {
+                foreach ($headers as $nome => $valor) {
+                    if (strcasecmp((string) $nome, 'Authorization') === 0 && is_string($valor) && trim($valor) !== '') {
+                        return $valor;
+                    }
                 }
             }
         }
 
-        if (preg_match('/^Bearer\s+(\S+)$/i', trim($cabecalho), $partes)) {
+        return null;
+    }
+
+    private function extrairTokenDeCabecalho(string $cabecalho): ?string
+    {
+        if (preg_match('/^(?i:Bearer)\s+([0-9a-f]{64})$/', trim($cabecalho), $partes)) {
             return $partes[1];
         }
 
@@ -44,14 +52,32 @@ class AutenticacaoServico extends RepositorioBase
     }
 
     /**
+     * Extrai o token Bearer hexadecimal de 64 caracteres do cabeçalho HTTP Authorization.
+     */
+    public function extrairBearerToken(): ?string
+    {
+        $cabecalho = $this->obterCabecalhoAuthorization();
+        if ($cabecalho === null) {
+            return null;
+        }
+
+        return $this->extrairTokenDeCabecalho($cabecalho);
+    }
+
+    /**
      * Verifica se a requisição possui um token Bearer válido e não expirado.
-     * Encerra com 401 caso o token não seja informado, não exista ou esteja expirado.
+     * Encerra com 401 caso o token não seja informado, seja malformado, não exista ou esteja expirado.
      */
     public function exigirToken(): array
     {
-        $token = $this->extrairBearerToken();
-        if ($token === null) {
+        $cabecalho = $this->obterCabecalhoAuthorization();
+        if ($cabecalho === null) {
             $this->http->responder(['detail' => 'Token não informado'], 401);
+        }
+
+        $token = $this->extrairTokenDeCabecalho($cabecalho);
+        if ($token === null) {
+            $this->http->responder(['detail' => 'Token inválido ou expirado'], 401);
         }
 
         $stmt = $this->pdo->prepare(

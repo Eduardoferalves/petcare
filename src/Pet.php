@@ -58,9 +58,19 @@ class Pet extends EntidadeBase
         $this->tutorIdTipoValido = $tutorIdTipoValido;
     }
 
+    public static function criarDeRequisicao(array $dados, ?int $id = null): self
+    {
+        return self::construirDeDados($dados, $id, false);
+    }
+
     public static function criarDeArray(array $dados, ?int $id = null): self
     {
-        $idResolvido = $id ?? (isset($dados['id']) ? (int) $dados['id'] : null);
+        return self::construirDeDados($dados, $id, true);
+    }
+
+    private static function construirDeDados(array $dados, ?int $id, bool $aceitarMetadadosBanco): self
+    {
+        $idResolvido = $id ?? ($aceitarMetadadosBanco && isset($dados['id']) ? (int) $dados['id'] : null);
         $nomeValido = isset($dados['nome']) && is_string($dados['nome']);
         $especieValida = isset($dados['especie']) && is_string($dados['especie']);
 
@@ -77,7 +87,9 @@ class Pet extends EntidadeBase
         $pesoValido = isset($dados['peso_kg']) && (is_int($dados['peso_kg']) || is_float($dados['peso_kg']));
         $dataValida = isset($dados['data_nascimento']) && is_string($dados['data_nascimento']);
         $tutorIdValido = isset($dados['tutor_id']) && is_int($dados['tutor_id']);
-        $tutorNome = array_key_exists('tutor_nome', $dados) ? $dados['tutor_nome'] : null;
+        $tutorNome = ($aceitarMetadadosBanco && isset($dados['tutor_nome']) && is_string($dados['tutor_nome']))
+            ? $dados['tutor_nome']
+            : null;
 
         return new self(
             $nomeValido ? $dados['nome'] : '',
@@ -153,8 +165,13 @@ class Pet extends EntidadeBase
             $erros[] = 'O campo raca deve ser texto com no máximo 60 caracteres ou nulo.';
         }
 
-        if (!$this->pesoTipoValido || $this->pesoKg <= 0 || $this->pesoKg > 200) {
-            $erros[] = 'O campo peso_kg é obrigatório e deve ser um número maior que 0 e até 200.';
+        if (
+            !$this->pesoTipoValido
+            || !is_finite($this->pesoKg)
+            || $this->pesoKg < 0.01
+            || $this->pesoKg > 200
+        ) {
+            $erros[] = 'O campo peso_kg é obrigatório e deve ser um número entre 0.01 e 200.';
         }
 
         if (!$this->dataTipoValido) {
@@ -162,9 +179,11 @@ class Pet extends EntidadeBase
         } else {
             $dt = DateTime::createFromFormat('Y-m-d', $this->dataNascimento);
             $errosData = DateTime::getLastErrors();
-            $dataCalendarioValida = $dt !== false
+            $dataCalendarioValida = preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->dataNascimento) === 1
+                && $dt !== false
                 && ($errosData === false || ($errosData['warning_count'] === 0 && $errosData['error_count'] === 0))
-                && $dt->format('Y-m-d') === $this->dataNascimento;
+                && $dt->format('Y-m-d') === $this->dataNascimento
+                && $this->dataNascimento >= '1000-01-01';
 
             if (!$dataCalendarioValida) {
                 $erros[] = 'O campo data_nascimento deve ser uma data válida no formato AAAA-MM-DD.';
