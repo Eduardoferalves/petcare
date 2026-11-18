@@ -2,7 +2,7 @@
 
 require_once __DIR__ . '/RepositorioBase.php';
 require_once __DIR__ . '/Pet.php';
-require_once __DIR__ . '/Http.php';
+require_once __DIR__ . '/ApiException.php';
 
 /**
  * Classe PetRepositorio
@@ -10,13 +10,6 @@ require_once __DIR__ . '/Http.php';
  */
 class PetRepositorio extends RepositorioBase
 {
-    public function __construct(
-        PDO $pdo,
-        private Http $http
-    ) {
-        parent::__construct($pdo);
-    }
-
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -42,10 +35,7 @@ class PetRepositorio extends RepositorioBase
 
         $pets = [];
         foreach ($stmt->fetchAll() as $linha) {
-            $linha['peso_kg'] = (float) $linha['peso_kg'];
-            $linha['tutor_id'] = (int) $linha['tutor_id'];
-            $pet = Pet::criarDeArray($linha);
-            $pets[] = $pet->toArray();
+            $pets[] = Pet::deLinhaBanco($linha)->toArray();
         }
 
         return $pets;
@@ -66,10 +56,7 @@ class PetRepositorio extends RepositorioBase
 
         $pets = [];
         foreach ($stmt->fetchAll() as $linha) {
-            $linha['peso_kg'] = (float) $linha['peso_kg'];
-            $linha['tutor_id'] = (int) $linha['tutor_id'];
-            $pet = Pet::criarDeArray($linha);
-            $pets[] = $pet->toArray();
+            $pets[] = Pet::deLinhaBanco($linha)->toArray();
         }
 
         return $pets;
@@ -90,10 +77,7 @@ class PetRepositorio extends RepositorioBase
             return null;
         }
 
-        $linha['peso_kg'] = (float) $linha['peso_kg'];
-        $linha['tutor_id'] = (int) $linha['tutor_id'];
-
-        return Pet::criarDeArray($linha);
+        return Pet::deLinhaBanco($linha);
     }
 
     public function existe(int $id): bool
@@ -120,7 +104,7 @@ class PetRepositorio extends RepositorioBase
             ]);
         } catch (PDOException $e) {
             if (($e->errorInfo[1] ?? null) === 1452) {
-                $this->http->responder(['detail' => ['O tutor_id informado não existe.']], 422);
+                throw ApiException::validacao(['O tutor_id informado não existe.']);
             }
             throw $e;
         }
@@ -148,9 +132,13 @@ class PetRepositorio extends RepositorioBase
             ]);
         } catch (PDOException $e) {
             if (($e->errorInfo[1] ?? null) === 1452) {
-                $this->http->responder(['detail' => ['O tutor_id informado não existe.']], 422);
+                throw ApiException::validacao(['O tutor_id informado não existe.']);
             }
             throw $e;
+        }
+
+        if ($stmt->rowCount() === 0) {
+            throw ApiException::naoEncontrado('Pet não encontrado');
         }
 
         return $pet;
@@ -158,7 +146,18 @@ class PetRepositorio extends RepositorioBase
 
     public function excluir(int $id): void
     {
-        $stmt = $this->pdo->prepare('DELETE FROM pets WHERE id = ?');
-        $stmt->execute([$id]);
+        try {
+            $stmt = $this->pdo->prepare('DELETE FROM pets WHERE id = ?');
+            $stmt->execute([$id]);
+        } catch (PDOException $e) {
+            if (($e->errorInfo[1] ?? null) === 1451) {
+                throw ApiException::conflito('Não é possível excluir pet vinculado a outros registros');
+            }
+            throw $e;
+        }
+
+        if ($stmt->rowCount() === 0) {
+            throw ApiException::naoEncontrado('Pet não encontrado');
+        }
     }
 }

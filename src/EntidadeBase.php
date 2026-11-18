@@ -10,9 +10,15 @@ require_once __DIR__ . '/Serializavel.php';
  */
 abstract class EntidadeBase implements Validavel, Serializavel
 {
-    public function __construct(
-        protected ?int $id = null
-    ) {}
+    protected ?int $id;
+
+    public function __construct(?int $id = null)
+    {
+        if ($id !== null && $id <= 0) {
+            throw new InvalidArgumentException('O id da entidade deve ser um número inteiro positivo.');
+        }
+        $this->id = $id;
+    }
 
     public function getId(): ?int
     {
@@ -21,6 +27,9 @@ abstract class EntidadeBase implements Validavel, Serializavel
 
     public function setId(int $id): void
     {
+        if ($id <= 0) {
+            throw new InvalidArgumentException('O id da entidade deve ser um número inteiro positivo.');
+        }
         $this->id = $id;
     }
 

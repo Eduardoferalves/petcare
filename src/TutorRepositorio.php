@@ -2,7 +2,7 @@
 
 require_once __DIR__ . '/RepositorioBase.php';
 require_once __DIR__ . '/Tutor.php';
-require_once __DIR__ . '/Http.php';
+require_once __DIR__ . '/ApiException.php';
 
 /**
  * Classe TutorRepositorio
@@ -10,13 +10,6 @@ require_once __DIR__ . '/Http.php';
  */
 class TutorRepositorio extends RepositorioBase
 {
-    public function __construct(
-        PDO $pdo,
-        private Http $http
-    ) {
-        parent::__construct($pdo);
-    }
-
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -27,8 +20,7 @@ class TutorRepositorio extends RepositorioBase
 
         $tutores = [];
         foreach ($linhas as $linha) {
-            $tutor = Tutor::criarDeArray($linha);
-            $tutores[] = $tutor->toArray();
+            $tutores[] = Tutor::deLinhaBanco($linha)->toArray();
         }
 
         return $tutores;
@@ -44,7 +36,7 @@ class TutorRepositorio extends RepositorioBase
             return null;
         }
 
-        return Tutor::criarDeArray($linha);
+        return Tutor::deLinhaBanco($linha);
     }
 
     public function existe(int $id): bool
@@ -67,7 +59,7 @@ class TutorRepositorio extends RepositorioBase
             ]);
         } catch (PDOException $e) {
             if (($e->errorInfo[1] ?? null) === 1062) {
-                $this->http->responder(['detail' => 'E-mail já cadastrado'], 409);
+                throw ApiException::conflito('E-mail já cadastrado');
             }
             throw $e;
         }
@@ -90,9 +82,13 @@ class TutorRepositorio extends RepositorioBase
             ]);
         } catch (PDOException $e) {
             if (($e->errorInfo[1] ?? null) === 1062) {
-                $this->http->responder(['detail' => 'E-mail já cadastrado'], 409);
+                throw ApiException::conflito('E-mail já cadastrado');
             }
             throw $e;
+        }
+
+        if ($stmt->rowCount() === 0) {
+            throw ApiException::naoEncontrado('Tutor não encontrado');
         }
 
         return $tutor;
@@ -104,10 +100,14 @@ class TutorRepositorio extends RepositorioBase
             $stmt = $this->pdo->prepare('DELETE FROM tutores WHERE id = ?');
             $stmt->execute([$id]);
         } catch (PDOException $e) {
-            if (($e->errorInfo[1] ?? null) === 1451 || ($e->errorInfo[1] ?? null) === 1452) {
-                $this->http->responder(['detail' => 'Não é possível excluir tutor que possui pets vinculados'], 409);
+            if (($e->errorInfo[1] ?? null) === 1451) {
+                throw ApiException::conflito('Não é possível excluir tutor que possui pets vinculados');
             }
             throw $e;
+        }
+
+        if ($stmt->rowCount() === 0) {
+            throw ApiException::naoEncontrado('Tutor não encontrado');
         }
     }
 }

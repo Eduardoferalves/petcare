@@ -2,6 +2,7 @@
 
 date_default_timezone_set('America/Sao_Paulo');
 
+require_once __DIR__ . '/src/ApiException.php';
 require_once __DIR__ . '/src/Http.php';
 require_once __DIR__ . '/src/BancoDados.php';
 require_once __DIR__ . '/src/CredencialLogin.php';
@@ -14,16 +15,19 @@ require_once __DIR__ . '/src/PetRepositorio.php';
 // Instanciação do manipulador HTTP e boundary global de exceções (garante resposta JSON)
 $http = new Http();
 set_exception_handler(static function (Throwable $e) use ($http): void {
+    if ($e instanceof ApiException) {
+        $http->responder(['detail' => $e->getDetail()], $e->getStatus());
+    }
     error_log('[PetCare API] ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
     $http->responder(['detail' => 'Erro interno do servidor'], 500);
 });
 
-$banco = new BancoDados($http);
+$banco = new BancoDados();
 $pdo = $banco->conectar();
 
-$autenticacao = new AutenticacaoServico($pdo, $http);
-$tutorRepositorio = new TutorRepositorio($pdo, $http);
-$petRepositorio = new PetRepositorio($pdo, $http);
+$autenticacao = new AutenticacaoServico($pdo);
+$tutorRepositorio = new TutorRepositorio($pdo);
+$petRepositorio = new PetRepositorio($pdo);
 
 // Extração do método HTTP e caminho relativo da rota
 $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -46,7 +50,7 @@ if ($caminho !== '/') {
 
 if ($metodo === 'POST' && $caminho === '/login') {
     $corpo = $http->lerCorpoJson();
-    $credencial = CredencialLogin::criarDeArray($corpo);
+    $credencial = CredencialLogin::criarDeRequisicao($corpo);
     $dadosSessao = $autenticacao->login($credencial);
 
     $http->responder($dadosSessao, 200);
@@ -137,10 +141,6 @@ if ($metodo === 'DELETE' && preg_match('#^/tutores/(\d+)$#', $caminho, $partes))
     $autenticacao->exigirToken();
     $id = (int) $partes[1];
 
-    if (!$tutorRepositorio->existe($id)) {
-        $http->responder(['detail' => 'Tutor não encontrado'], 404);
-    }
-
     $tutorRepositorio->excluir($id);
     $http->responder(null, 204);
 }
@@ -184,16 +184,17 @@ if ($metodo === 'GET' && preg_match('#^/pets/(\d+)$#', $caminho, $partes)) {
     $http->responder($pet, 200);
 }
 
+$errosTutorInexistente = static fn(Pet $pet): array => ($pet->getTutorId() > 0 && !$tutorRepositorio->existe($pet->getTutorId()))
+    ? ['O tutor_id informado não existe.']
+    : [];
+
 // POST /pets - Cadastra um novo pet (Requer Token)
 if ($metodo === 'POST' && $caminho === '/pets') {
     $autenticacao->exigirToken();
     $corpo = $http->lerCorpoJson();
 
     $pet = Pet::criarDeRequisicao($corpo);
-    $erros = $pet->validar(fn(int $tutorId): bool => $tutorRepositorio->existe($tutorId));
-    if (!empty($erros)) {
-        $http->responder(['detail' => $erros], 422);
-    }
+    $http->validarOuResponderErro($pet, $errosTutorInexistente($pet));
 
     $petCriado = $petRepositorio->criar($pet);
     $http->responder($petCriado, 201);
@@ -210,10 +211,7 @@ if ($metodo === 'PUT' && preg_match('#^/pets/(\d+)$#', $caminho, $partes)) {
     }
 
     $pet = Pet::criarDeRequisicao($corpo, $id);
-    $erros = $pet->validar(fn(int $tutorId): bool => $tutorRepositorio->existe($tutorId));
-    if (!empty($erros)) {
-        $http->responder(['detail' => $erros], 422);
-    }
+    $http->validarOuResponderErro($pet, $errosTutorInexistente($pet));
 
     $petAtualizado = $petRepositorio->atualizar($pet);
     $http->responder($petAtualizado, 200);
@@ -223,10 +221,6 @@ if ($metodo === 'PUT' && preg_match('#^/pets/(\d+)$#', $caminho, $partes)) {
 if ($metodo === 'DELETE' && preg_match('#^/pets/(\d+)$#', $caminho, $partes)) {
     $autenticacao->exigirToken();
     $id = (int) $partes[1];
-
-    if (!$petRepositorio->existe($id)) {
-        $http->responder(['detail' => 'Pet não encontrado'], 404);
-    }
 
     $petRepositorio->excluir($id);
     $http->responder(null, 204);

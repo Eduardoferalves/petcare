@@ -1,21 +1,20 @@
 <?php
 
-require_once __DIR__ . '/RepositorioBase.php';
 require_once __DIR__ . '/CredencialLogin.php';
-require_once __DIR__ . '/Http.php';
+require_once __DIR__ . '/ApiException.php';
 
 /**
  * Classe AutenticacaoServico
- * Gerencia a autenticação por Bearer Token (login, verificação em tempo real e logout).
+ * Gerencia a autenticação por Bearer Token via composição sobre PDO (login, verificação e logout).
  */
-class AutenticacaoServico extends RepositorioBase
+class AutenticacaoServico
 {
+    // Hash Bcrypt válido usado para igualar o custo de tempo quando o e-mail não existe
+    private const DUMMY_BCRYPT_HASH = '$2y$10$VvctLq45NFgb07wuEksxNeArDBwUN8GSIJg0yWaRdJrP.Vbd3iZCW';
+
     public function __construct(
-        PDO $pdo,
-        private Http $http
-    ) {
-        parent::__construct($pdo);
-    }
+        private PDO $pdo
+    ) {}
 
     /**
      * Lê o valor bruto do cabeçalho HTTP Authorization (ou null se ausente/vazio).
@@ -66,18 +65,18 @@ class AutenticacaoServico extends RepositorioBase
 
     /**
      * Verifica se a requisição possui um token Bearer válido e não expirado.
-     * Encerra com 401 caso o token não seja informado, seja malformado, não exista ou esteja expirado.
+     * Lança ApiException 401 caso o token não seja informado, seja malformado, não exista ou esteja expirado.
      */
     public function exigirToken(): array
     {
         $cabecalho = $this->obterCabecalhoAuthorization();
         if ($cabecalho === null) {
-            $this->http->responder(['detail' => 'Token não informado'], 401);
+            throw ApiException::naoAutenticado('Token não informado');
         }
 
         $token = $this->extrairTokenDeCabecalho($cabecalho);
         if ($token === null) {
-            $this->http->responder(['detail' => 'Token inválido ou expirado'], 401);
+            throw ApiException::naoAutenticado('Token inválido ou expirado');
         }
 
         $stmt = $this->pdo->prepare(
@@ -90,18 +89,21 @@ class AutenticacaoServico extends RepositorioBase
         $registro = $stmt->fetch();
 
         if (!$registro) {
-            $this->http->responder(['detail' => 'Token inválido ou expirado'], 401);
+            throw ApiException::naoAutenticado('Token inválido ou expirado');
         }
 
         return $registro;
     }
 
     /**
-     * Realiza o login do operador, gera o token CSPRNG de 64 caracteres e grava na tabela tokens.
+     * Realiza o login do operador, gera o token CSPRNG de 64 caracteres e grava validade usando o relógio do SGBD.
      */
     public function login(CredencialLogin $credencial): array
     {
-        $this->http->validarOuResponderErro($credencial);
+        $erros = $credencial->validar();
+        if ($erros !== []) {
+            throw ApiException::validacao($erros);
+        }
 
         $stmt = $this->pdo->prepare(
             'SELECT id, nome, email, senha_hash FROM usuarios WHERE email = ?'
@@ -109,17 +111,25 @@ class AutenticacaoServico extends RepositorioBase
         $stmt->execute([$credencial->getEmail()]);
         $usuario = $stmt->fetch();
 
-        if (!$usuario || !password_verify($credencial->getSenha(), $usuario['senha_hash'])) {
-            $this->http->responder(['detail' => 'E-mail ou senha inválidos'], 401);
+        $hashParaVerificar = $usuario ? (string) $usuario['senha_hash'] : self::DUMMY_BCRYPT_HASH;
+        $senhaValida = password_verify($credencial->getSenha(), $hashParaVerificar);
+
+        if (!$usuario || !$senhaValida) {
+            throw ApiException::naoAutenticado('E-mail ou senha inválidos');
         }
 
-        $token = bin2hex(random_bytes(32));
-        $expiraEm = date('Y-m-d H:i:s', strtotime('+2 hours'));
+        // Remove sessões expiradas e calcula +2h no próprio SGBD para evitar divergência de relógio
+        $this->pdo->exec('DELETE FROM tokens WHERE expira_em <= NOW()');
 
+        $token = bin2hex(random_bytes(32));
         $stmtToken = $this->pdo->prepare(
-            'INSERT INTO tokens (usuario_id, token, expira_em) VALUES (?, ?, ?)'
+            'INSERT INTO tokens (usuario_id, token, expira_em) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 2 HOUR))'
         );
-        $stmtToken->execute([(int) $usuario['id'], $token, $expiraEm]);
+        $stmtToken->execute([(int) $usuario['id'], $token]);
+
+        $stmtExp = $this->pdo->prepare('SELECT expira_em FROM tokens WHERE id = ?');
+        $stmtExp->execute([(int) $this->pdo->lastInsertId()]);
+        $expiraEm = (string) $stmtExp->fetchColumn();
 
         return [
             'token' => $token,

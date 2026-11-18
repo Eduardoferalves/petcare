@@ -10,32 +10,36 @@ class CredencialLogin implements Validavel
 {
     private string $email;
     private string $senha;
-    private bool $emailTipoValido;
-    private bool $senhaTipoValido;
+    /** @var array<string, bool> */
+    private array $camposTipoInvalido = [];
 
-    public function __construct(
-        string $email,
-        string $senha,
-        bool $emailTipoValido = true,
-        bool $senhaTipoValido = true
-    ) {
+    public function __construct(string $email, string $senha)
+    {
         $this->email = trim($email);
         $this->senha = $senha;
-        $this->emailTipoValido = $emailTipoValido;
-        $this->senhaTipoValido = $senhaTipoValido;
     }
 
-    public static function criarDeArray(array $dados): self
+    public static function criarDeRequisicao(array $dados): self
     {
-        $emailValido = isset($dados['email']) && is_string($dados['email']);
-        $senhaValida = isset($dados['senha']) && is_string($dados['senha']);
+        $camposInvalidos = [];
 
-        return new self(
+        $emailValido = isset($dados['email']) && is_string($dados['email']);
+        if (!$emailValido) {
+            $camposInvalidos['email'] = true;
+        }
+
+        $senhaValida = isset($dados['senha']) && is_string($dados['senha']);
+        if (!$senhaValida) {
+            $camposInvalidos['senha'] = true;
+        }
+
+        $credencial = new self(
             $emailValido ? $dados['email'] : '',
-            $senhaValida ? $dados['senha'] : '',
-            $emailValido,
-            $senhaValida
+            $senhaValida ? $dados['senha'] : ''
         );
+        $credencial->camposTipoInvalido = $camposInvalidos;
+
+        return $credencial;
     }
 
     public function getEmail(): string
@@ -52,7 +56,7 @@ class CredencialLogin implements Validavel
     {
         $erros = [];
 
-        if (!$this->emailTipoValido || $this->email === '') {
+        if (isset($this->camposTipoInvalido['email']) || $this->email === '') {
             $erros[] = 'O campo email é obrigatório.';
         } elseif (
             filter_var($this->email, FILTER_VALIDATE_EMAIL) === false
@@ -61,7 +65,7 @@ class CredencialLogin implements Validavel
             $erros[] = 'O campo email deve conter um endereço de e-mail válido com até 150 caracteres.';
         }
 
-        if (!$this->senhaTipoValido || $this->senha === '') {
+        if (isset($this->camposTipoInvalido['senha']) || $this->senha === '') {
             $erros[] = 'O campo senha é obrigatório.';
         } elseif (strlen($this->senha) > 255) {
             $erros[] = 'O campo senha deve ter no máximo 255 caracteres.';
