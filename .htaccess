@@ -1,4 +1,13 @@
+Options -Indexes
+AddDefaultCharset UTF-8
+
+<IfModule mod_mime.c>
+    AddType text/plain .http .md .sql
+    AddCharset utf-8 .http .md .sql
+</IfModule>
+
 RewriteEngine On
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^\.git - [F,L]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [QSA,L]
