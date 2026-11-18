@@ -59,8 +59,10 @@ CREATE TABLE usuarios (
 CREATE TABLE tokens (
     id INT AUTO_INCREMENT PRIMARY KEY,
     usuario_id INT NOT NULL,
-    token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
+    token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     expira_em DATETIME NOT NULL,
+    CONSTRAINT uq_tokens_token UNIQUE (token),
+    INDEX idx_tokens_expira_em (expira_em),
     CONSTRAINT fk_tokens_usuario
         FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
         ON DELETE CASCADE
@@ -98,4 +100,4 @@ INSERT INTO pets (id, nome, especie, raca, data_nascimento, peso_kg, tutor_id) V
 -- Hash gerado via PHP 8.2: password_hash('123456', PASSWORD_DEFAULT)
 INSERT INTO usuarios (id, nome, email, senha_hash) VALUES
 (1, 'Administrador PetCare', 'admin@petcare.com.br', '$2y$10$WK.XpSj95dYQohI2LMv81uzJb9PcwEymQuXHJx3G8..vv3i.esTxq'),
-(2, 'Recepção Clínica PetCare', 'recepcao@petcare.com.br', '$2y$10$WK.XpSj95dYQohI2LMv81uzJb9PcwEymQuXHJx3G8..vv3i.esTxq');
+(2, 'Recepção Clínica PetCare', 'recepcao@petcare.com.br', '$2y$10$q.4D7fkhLdvaqOQ7SYp7guGlIQlAbENI66sAlG8PnLilxnN5eH.OK');

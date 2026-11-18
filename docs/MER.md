@@ -15,7 +15,7 @@
 | **Referencial Teórico** | Elmasri & Navathe (*Sistemas de Banco de Dados*) / Algoritmo de 8 Passos (CEUB) |
 | **Fonte da Verdade** | [`banco.sql`](../banco.sql) (MySQL 8 / MariaDB • Motor Transacional `InnoDB`) |
 | **Codificação Padrão** | `utf8mb4` / `utf8mb4_unicode_ci` |
-| **Collation de Sessão** | `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin` |
+| **Collation do Token** | `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin` *(coluna `tokens.token`)* |
 | **Arquitetura Alvo** | Trabalho 1 (PHP 8+ Orientado a Objetos com PDO) & Trabalho 2 (Python FastAPI) |
 
 ---
@@ -53,8 +53,8 @@ erDiagram
         varchar(60) nome "NOT NULL (2..60 chars)"
         varchar(20) especie "NOT NULL (cachorro|gato|ave|roedor|outro)"
         varchar(60) raca "NULL DEFAULT NULL (SRD)"
-        date data_nascimento "NOT NULL (<= hoje)"
-        decimal(5_2) peso_kg "NOT NULL (0 < peso <= 200.00)"
+        date data_nascimento "NOT NULL (1000-01-01..hoje)"
+        decimal(5_2) peso_kg "NOT NULL (0.01 <= peso <= 200.00)"
         int tutor_id FK "NOT NULL -> tutores(id)"
     }
 
@@ -68,10 +68,12 @@ erDiagram
     TOKENS {
         int id PK "AUTO_INCREMENT"
         int usuario_id FK "NOT NULL -> usuarios(id)"
-        char(64) token UK "NOT NULL (ascii_bin / 256-bit hex)"
-        datetime expira_em "NOT NULL (+2 hours)"
+        char(64) token UK "NOT NULL (uq_tokens_token / ascii_bin)"
+        datetime expira_em "NOT NULL (+2h SGBD / idx)"
     }
 ```
+
+> *(Nota de sintaxe Mermaid: `decimal(5_2)` representa o tipo físico `DECIMAL(5,2)`, pois o parser `erDiagram` do Mermaid não aceita vírgula dentro do identificador de tipo.)*
 
 ---
 
@@ -82,7 +84,7 @@ erDiagram
 A clínica veterinária **PetCare** necessita de um banco de dados relacional transacional para manter o registro estruturado e íntegro de seus clientes responsáveis (**tutores**), dos pacientes animais atendidos (**pets**), do quadro de funcionários operadores do sistema (**usuários**) e das credenciais temporárias de sessão emitidas para controle de acesso HTTP (**tokens**).
 
 * **Tutores (`tutores`):** No minimundo especificado, cada **tutor** representa o proprietário ou responsável legal pelos animais atendidos na clínica. De cada tutor devem ser armazenados obrigatoriamente um identificador único interno (`id`), o nome completo (`nome`, entre 2 e 100 caracteres), o telefone de contato (`telefone`, até 30 caracteres) e o endereço de e-mail (`email`, até 150 caracteres). Por exigência de negócio e comunicação exclusiva, o endereço de e-mail do tutor é único em todo o sistema (restrição `uq_tutores_email`), não sendo permitido o cadastramento de dois tutores com o mesmo e-mail. Um tutor pode ser cadastrado na recepção antes mesmo de possuir qualquer animal vinculado ou pode ter sob sua tutela múltiplos animais simultaneamente.
-* **Pets (`pets`):** Cada **pet** representa um paciente animal submetido ao acompanhamento clínico da PetCare. De cada pet registram-se obrigatoriamente um identificador único (`id`), o nome do animal (`nome`, entre 2 e 60 caracteres), a espécie biológica (`especie`, restrita estritamente ao domínio fechado `{'cachorro', 'gato', 'ave', 'roedor', 'outro'}`), a data de nascimento (`data_nascimento`, data de calendário válida no formato `AAAA-MM-DD` e não futura) e o peso corpóreo em quilogramas (`peso_kg`, valor decimal positivo maior que `0,00` e até `200,00 kg`). Adicionalmente, registra-se a raça do animal (`raca`, até 60 caracteres), sendo este o **único atributo opcional (anulável — `NULL`)** de todo o esquema de dados, de modo a contemplar animais Sem Raça Definida (SRD). Todo pet cadastrado depende obrigatoriamente da existência prévia de um único tutor responsável (`tutor_id`). Por regra estrita de proteção ao prontuário veterinário, o sistema proíbe a exclusão de qualquer tutor que possua pets vinculados.
+* **Pets (`pets`):** Cada **pet** representa um paciente animal submetido ao acompanhamento clínico da PetCare. De cada pet registram-se obrigatoriamente um identificador único (`id`), o nome do animal (`nome`, entre 2 e 60 caracteres), a espécie biológica (`especie`, restrita estritamente ao domínio fechado `{'cachorro', 'gato', 'ave', 'roedor', 'outro'}`), a data de nascimento (`data_nascimento`, data de calendário válida no formato `AAAA-MM-DD`, a partir de `1000-01-01` e não futura) e o peso corpóreo em quilogramas (`peso_kg`, valor decimal positivo entre `0,01` e `200,00 kg`). Adicionalmente, registra-se a raça do animal (`raca`, até 60 caracteres), sendo este o **único atributo opcional (anulável — `NULL`)** de todo o esquema de dados, de modo a contemplar animais Sem Raça Definida (SRD). Todo pet cadastrado depende obrigatoriamente da existência prévia de um único tutor responsável (`tutor_id`). Por regra estrita de proteção ao prontuário veterinário, o sistema proíbe a exclusão de qualquer tutor que possua pets vinculados.
 * **Usuários (`usuarios`) e Tokens (`tokens`):** Para governança das operações da API REST, os funcionários da clínica são cadastrados como **usuários** operadores, contendo identificador único (`id`), nome do operador/setor (`nome`), e-mail corporativo único de login (`email`, protegido pela restrição `uq_usuarios_email`) e o hash criptográfico da senha (`senha_hash`, gerado via algoritmo Bcrypt). Quando um usuário se autentica com sucesso (rota `POST /login`), o sistema emite um **token** de sessão no padrão *Bearer Token*, composto por identificador próprio (`id`), vínculo obrigatório com o usuário autenticado (`usuario_id`), sequência hexadecimal aleatória única de 64 caracteres (`token`) e data/hora limite de expiração (`expira_em`, definida para 2 horas após a emissão).
 
 ### 1.2. Regras de Acesso Refletidas no Banco e Planejamento Arquitetural (PHP 8 POO & FastAPI)
@@ -139,7 +141,7 @@ A clínica veterinária **PetCare** necessita de um banco de dados relacional tr
 | Atributo Conceitual | Classificação Estrutural (Elmasri & Navathe) | Obrigatoriedade | Papel de Chave / Semântica |
 | :--- | :--- | :---: | :--- |
 | `id` | Simples • Monovalorado • Armazenado | **Obrigatório** (`NOT NULL`) | `PK` **Identificador Principal** — Chave primária substituta da sessão. |
-| `usuario_id` *(Lógico)* | Simples • Monovalorado • Armazenado | **Obrigatório** (`NOT NULL`) | `FK` **Chave Estrangeira** — Materializa o relacionamento `EMITE` (Passo 4). |
+| `usuario_id` *(Lógico)* | Simples • Monovalorado • Armazenado | **Obrigatório** (`NOT NULL`) | `FK` **Chave Estrangeira** — Materializa o relacionamento `AUTENTICA / EMITE` (Passo 4). |
 | `token` | Simples • Monovalorado • Armazenado | **Obrigatório** (`NOT NULL`) | `UNIQUE` **Identificador Candidato** — Credencial opaca Bearer de 64 caracteres ASCII. |
 | `expira_em` | Simples • Monovalorado • Armazenado | **Obrigatório** (`NOT NULL`) | Atributo Descritivo Temporal (instante limite de validade da sessão). |
 
@@ -234,21 +236,21 @@ As quatro tabelas abaixo especificam o modelo físico implementado em [`banco.sq
 
 | Atributo / Coluna | Tipo Físico e Tamanho | Nulo? | Restrições / Índices (PK, FK, UQ, IDX) | Regras de Domínio e Validação na API (HTTP 422 / 409) | Descrição Semântica |
 | :--- | :--- | :---: | :--- | :--- | :--- |
-| `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Gerado pelo SGBD no `POST /tutores`. Nas rotas `/tutores/{id}`, exige inteiro positivo (`HTTP 404` se inexistente). | Identificador único sequencial do tutor responsável. |
+| `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Gerado pelo SGBD no `POST /tutores`. Nas rotas `/tutores/{id}` (`\d+`), valores numéricos inexistentes (incluindo `0`) retornam `HTTP 404 ("Tutor não encontrado")`; demais formatos retornam `HTTP 404 ("Rota não encontrada")`. | Identificador único sequencial do tutor responsável. |
 | `nome` | `VARCHAR(100)` | `NOT NULL` | — | `HTTP 422` String obrigatória entre **2 e 100 caracteres** após `trim()` (`/^.{2,100}$/u`). | Nome completo do cliente proprietário dos animais. |
 | `telefone` | `VARCHAR(30)` | `NOT NULL` | — | `HTTP 422` String obrigatória não vazia entre **1 e 30 caracteres** após `trim()` (`/^.{1,30}$/u`). | Número de telefone fixo ou móvel para contato clínico. |
-| `email` | `VARCHAR(150)` | `NOT NULL` | `UQ` `CONSTRAINT uq_tutores_email UNIQUE (email)` | `HTTP 422` Obrigatório e validado via `FILTER_VALIDATE_EMAIL`. `HTTP 409` Duplicidade (erro MySQL `1062`): `"E-mail já cadastrado"`. | Endereço de e-mail exclusivo do tutor na clínica. |
+| `email` | `VARCHAR(150)` | `NOT NULL` | `UQ` `CONSTRAINT uq_tutores_email UNIQUE (email)` | `HTTP 422` Obrigatório, validado via `FILTER_VALIDATE_EMAIL` e até **150 caracteres** (`/^.{1,150}$/u`). `HTTP 409` Duplicidade (erro MySQL `1062`): `"E-mail já cadastrado"`. | Endereço de e-mail exclusivo do tutor na clínica. |
 
 ### 5.2. Relação Física: `pets`
 
 | Atributo / Coluna | Tipo Físico e Tamanho | Nulo? | Restrições / Índices (PK, FK, UQ, IDX) | Regras de Domínio e Validação na API (HTTP 422 / 409) | Descrição Semântica |
 | :--- | :--- | :---: | :--- | :--- | :--- |
-| `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Gerado pelo SGBD no `POST /pets`. Nas rotas `/pets/{id}`, exige inteiro positivo (`HTTP 404` se inexistente). | Identificador único sequencial do prontuário do pet. |
+| `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Gerado pelo SGBD no `POST /pets`. Nas rotas `/pets/{id}` (`\d+`), valores numéricos inexistentes (incluindo `0`) retornam `HTTP 404 ("Pet não encontrado")`; demais formatos retornam `HTTP 404 ("Rota não encontrada")`. | Identificador único sequencial do prontuário do pet. |
 | `nome` | `VARCHAR(60)` | `NOT NULL` | — | `HTTP 422` String obrigatória entre **2 e 60 caracteres** após `trim()` (`/^.{2,60}$/u`). | Nome pelo qual o paciente animal é identificado. |
 | `especie` | `VARCHAR(20)` | `NOT NULL` | — | `HTTP 422` Obrigatório; restrito estritamente a: `cachorro`, `gato`, `ave`, `roedor` ou `outro` (no `POST`, `PUT` e filtro `?especie=`). | Classificação biológica da espécie do animal. |
 | `raca` | `VARCHAR(60)` | `NULL` | `DEFAULT NULL` | `HTTP 422` Opcional (aceita `null` ou omissão). Se enviado, deve ser string de **até 60 caracteres** (string vazia é convertida em `null`). | Raça específica do animal ou `NULL` quando Sem Raça Definida (SRD). |
-| `data_nascimento` | `DATE` | `NOT NULL` | — | `HTTP 422` Obrigatório no formato `AAAA-MM-DD`, data real de calendário e **não futura** (`<= hoje`). | Data de nascimento do animal para cálculo etário e clínico. |
-| `peso_kg` | `DECIMAL(5,2)` | `NOT NULL` | — | `HTTP 422` Obrigatório, numérico (`int` ou `float`), estritamente **maior que 0 e menor ou igual a 200** (`0 < peso_kg <= 200.00`). | Peso corpóreo atual em quilogramas com 2 casas decimais. |
+| `data_nascimento` | `DATE` | `NOT NULL` | — | `HTTP 422` Obrigatório no formato `AAAA-MM-DD`, data real de calendário entre **`1000-01-01` e hoje** (`America/Sao_Paulo`). | Data de nascimento do animal para cálculo etário e clínico. |
+| `peso_kg` | `DECIMAL(5,2)` | `NOT NULL` | — | `HTTP 422` Obrigatório, numérico finito (`int` ou `float`), entre **`0.01` e `200.00`** (impede arredondamento sub-centavo para `0.00`). | Peso corpóreo atual em quilogramas com 2 casas decimais. |
 | `tutor_id` | `INT` | `NOT NULL` | `FK` `fk_pets_tutor -> tutores(id)` `ON DELETE RESTRICT` • `ON UPDATE CASCADE` | `HTTP 422` Inteiro positivo que deve existir em `tutores.id` (erro MySQL `1452`). `HTTP 409` Bloqueia `DELETE /tutores/{id}` (erro MySQL `1451`). | Chave estrangeira que vincula o animal ao seu tutor responsável. |
 
 ### 5.3. Relação Física: `usuarios`
@@ -257,8 +259,8 @@ As quatro tabelas abaixo especificam o modelo físico implementado em [`banco.sq
 | :--- | :--- | :---: | :--- | :--- | :--- |
 | `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Identificador interno referenciado por `tokens.usuario_id` no momento do login. | Identificador único do funcionário operador da clínica. |
 | `nome` | `VARCHAR(100)` | `NOT NULL` | — | Obrigatório no banco; recuperado no `INNER JOIN` do método `AutenticacaoServico::exigirToken()`. | Nome completo ou perfil operacional (ex.: Recepção Clínica). |
-| `email` | `VARCHAR(150)` | `NOT NULL` | `UQ` `CONSTRAINT uq_usuarios_email UNIQUE (email)` | `HTTP 422` No `POST /login`, obrigatório e formato válido. `HTTP 401` Se inexistente: `"E-mail ou senha inválidos"`. | E-mail corporativo único utilizado como credencial de login. |
-| `senha_hash` | `VARCHAR(255)` | `NOT NULL` | — | `HTTP 422` Campo `senha` obrigatório no login. `HTTP 401` Validado via `password_verify($senha, $senha_hash)`. | Hash criptográfico Bcrypt (`$2y$10$...`). Senhas jamais são salvas em texto puro. |
+| `email` | `VARCHAR(150)` | `NOT NULL` | `UQ` `CONSTRAINT uq_usuarios_email UNIQUE (email)` | `HTTP 422` No `POST /login`, obrigatório, formato válido e até **150 caracteres**. `HTTP 401` Se inexistente: `"E-mail ou senha inválidos"`. | E-mail corporativo único utilizado como credencial de login. |
+| `senha_hash` | `VARCHAR(255)` | `NOT NULL` | — | `HTTP 422` Campo `senha` obrigatório (até 255 bytes) no login. `HTTP 401` Validado via `password_verify($senha, $senha_hash)`. | Hash criptográfico Bcrypt (`$2y$10$...`). Senhas jamais são salvas em texto puro. |
 
 ### 5.4. Relação Física: `tokens`
 
@@ -266,8 +268,8 @@ As quatro tabelas abaixo especificam o modelo físico implementado em [`banco.sq
 | :--- | :--- | :---: | :--- | :--- | :--- |
 | `id` | `INT` | `NOT NULL` | `PK` `AUTO_INCREMENT` (Índice Clustered `PRIMARY`) | Gerado automaticamente a cada autenticação bem-sucedida em `POST /login`. | Identificador único sequencial do registro de sessão. |
 | `usuario_id` | `INT` | `NOT NULL` | `FK` `fk_tokens_usuario -> usuarios(id)` `ON DELETE CASCADE` • `ON UPDATE CASCADE` | Preenchido com `usuarios.id` no login e verificado via `INNER JOIN usuarios u ON u.id = t.usuario_id` em toda rota protegida. | Chave estrangeira que identifica o operador proprietário da sessão. |
-| `token` | `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin` | `NOT NULL` | `UQ` `UNIQUE (token)` (Índice Único Binário Case-Sensitive) | `HTTP 401` Extraído de `Authorization: Bearer <token>`; retorna `401` se ausente/inválido. Removido no `POST /logout` (`HTTP 204`). | Token hexadecimal opaco de 64 caracteres (256 bits via `bin2hex(random_bytes(32))`). |
-| `expira_em` | `DATETIME` | `NOT NULL` | — | `HTTP 401` Definido como `+2 hours` no login; validado em banco via `AND t.expira_em > NOW()`. | Carimbo de data e hora limite de validade da sessão Bearer. |
+| `token` | `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin` | `NOT NULL` | `UQ` `CONSTRAINT uq_tokens_token UNIQUE (token)` (Índice Único Binário Case-Sensitive) | `HTTP 401` Extraído de `Authorization: Bearer <token>`; ausente retorna `"Token não informado"`, malformado/inválido retorna `"Token inválido ou expirado"`. Removido no `POST /logout` (`HTTP 204`). | Token hexadecimal opaco de 64 caracteres (256 bits via `bin2hex(random_bytes(32))`). |
+| `expira_em` | `DATETIME` | `NOT NULL` | `IDX` `INDEX idx_tokens_expira_em (expira_em)` | `HTTP 401` Calculado no SGBD via `DATE_ADD(NOW(), INTERVAL 2 HOUR)`; validado via `AND t.expira_em > NOW()`. Tokens vencidos são limpos no login. | Carimbo de data e hora limite de validade da sessão Bearer. |
 
 ---
 
@@ -281,7 +283,7 @@ O projeto físico em [`banco.sql`](../banco.sql) adota deliberadamente duas aç�
 | :--- | :--- | :--- |
 | **Natureza Semântica do Registro Filho** | **Prontuário Clínico Permanente (`pets`):** Representa uma vida animal atendida, cujo histórico clínico, peso e rastreabilidade médica não podem ser destruídos acidentalmente. | **Estado Efêmero de Sessão (`tokens`):** Representa apenas uma credencial transitória de autenticação com validade de 2 horas vinculada ao operador. |
 | **Comportamento Físico no SGBD (MySQL InnoDB)** | Ao tentar executar `DELETE FROM tutores WHERE id = ?` para um tutor que possua pets associados, o motor `InnoDB` aborta a instrução e lança o código de erro MySQL **`1451`** (*Cannot delete or update a parent row: a foreign key constraint fails*). | Ao executar `DELETE FROM usuarios WHERE id = ?`, o motor `InnoDB` propaga a exclusão dentro da mesma transação ACID, apagando automaticamente todos os registros de `tokens` pertencentes àquele `usuario_id`. |
-| **Tratamento na API REST e Código HTTP** | Em [`TutorRepositorio::excluir()`](../src/TutorRepositorio.php), o bloco `try/catch (PDOException $e)` intercepta os códigos `1451` / `1452` e retorna **`HTTP 409 Conflict`** com o payload `{"detail": "Não é possível excluir tutor que possui pets vinculados"}`. Caso o tutor não possua pets (ex.: tutor `id = 6`), a exclusão conclui com **`HTTP 204 No Content`**. | Garante revogação imediata e atômica de todas as sessões ativas de um funcionário desligado, impedindo que tokens emitidos anteriormente continuem autenticando requisições (retornando **`HTTP 401 Unauthorized`**). |
+| **Tratamento na API REST e Código HTTP** | Em [`TutorRepositorio::excluir()`](../src/TutorRepositorio.php), o bloco `try/catch (PDOException $e)` intercepta o código `1451` e lança `ApiException::conflito(...)`, mapeada centralmente em [`index.php`](../index.php) para **`HTTP 409 Conflict`** com o payload `{"detail": "Não é possível excluir tutor que possui pets vinculados"}`. Caso o tutor não possua pets (ex.: tutor `id = 6`), a exclusão conclui com **`HTTP 204 No Content`**. | Garante revogação imediata e atômica de todas as sessões ativas de um funcionário desligado, impedindo que tokens emitidos anteriormente continuem autenticando requisições (retornando **`HTTP 401 Unauthorized`**). |
 
 ### 6.2. Conformidade Estrita com as Formas Normais (1FN, 2FN e 3FN)
 
@@ -296,11 +298,11 @@ O projeto físico em [`banco.sql`](../banco.sql) adota deliberadamente duas aç�
 
 > [!IMPORTANT]
 > **Armazenamento Irreversível de Senhas com Bcrypt (`usuarios.senha_hash VARCHAR(255) NOT NULL`)**  
-> As senhas dos operadores nunca são armazenadas em texto puro nem sob algoritmos de hash rápidos vulneráveis a GPU (como MD5 ou SHA-256 simples). Utiliza-se a função nativa `password_hash($senha, PASSWORD_DEFAULT)` do PHP 8.2+, que emprega o algoritmo adaptativo **Bcrypt** (prefixo `$2y$10$`) com fator de custo 10 ($2^{10} = 1.024$ rodadas de expansão de chave Blowfish) e **sal aleatório criptográfico individual de 128 bits** embutido nos 60 caracteres do hash resultante. O dimensionamento em `VARCHAR(255)` segue a especificação oficial do PHP para suportar migração transparente para `PASSWORD_ARGON2ID`. A verificação no login utiliza `password_verify()`, cuja comparação em tempo constante previne ataques de temporização (*timing attacks*).
+> As senhas dos operadores nunca são armazenadas em texto puro nem sob algoritmos de hash rápidos vulneráveis a GPU (como MD5 ou SHA-256 simples). Utiliza-se a função nativa `password_hash($senha, PASSWORD_DEFAULT)` do PHP 8.2+, que emprega o algoritmo adaptativo **Bcrypt** (prefixo `$2y$10$`) com fator de custo 10 ($2^{10} = 1.024$ rodadas de expansão de chave Blowfish) e **sal aleatório criptográfico individual de 128 bits** embutido nos 60 caracteres do hash resultante. O dimensionamento em `VARCHAR(255)` segue a especificação oficial do PHP para suportar migração transparente para `PASSWORD_ARGON2ID`. A verificação no login utiliza `password_verify()` (incluindo verificação contra `DUMMY_BCRYPT_HASH` quando o e-mail não existe, mitigando enumeração por tempo de resposta).
 
-#### Tokens Opacos de 256 bits e Collation Binária (`tokens.token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE`)
+#### Tokens Opacos de 256 bits e Collation Binária (`tokens.token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL`)
 
 1. **Geração CSPRNG:** Cada token é gerado por `bin2hex(random_bytes(32))`, extraindo 32 bytes (256 bits de entropia) do gerador pseudoaleatório criptograficamente seguro do sistema operacional e convertendo-os em exatamente 64 caracteres hexadecimais (`[0-9a-f]`).
-2. **Alocação Fixa `CHAR(64)` com Charset `ascii`:** Como todo token possui invariavelmente 64 caracteres pertencentes ao alfabeto ASCII de 7 bits, sobrescrever o charset padrão da tabela (`utf8mb4`, até 4 bytes/caractere) por `CHARACTER SET ascii` reduz o espaço físico ocupado na linha e no índice B+Tree `UNIQUE (token)` de 256 bytes para **exatos 64 bytes fixos**, sem byte adicional de prefixo de comprimento.
+2. **Alocação Fixa `CHAR(64)` com Charset `ascii`:** Como todo token possui invariavelmente 64 caracteres pertencentes ao alfabeto ASCII de 7 bits, sobrescrever o charset padrão da tabela (`utf8mb4`, até 4 bytes/caractere) por `CHARACTER SET ascii` reduz o espaço físico ocupado na linha e no índice B+Tree `uq_tokens_token` de 256 bytes para **exatos 64 bytes fixos**, sem byte adicional de prefixo de comprimento.
 3. **Comparação Estrita Case-Sensitive via `COLLATE ascii_bin`:** Enquanto o collation geral do banco (`utf8mb4_unicode_ci`) é *case-insensitive* (tratando `'a' == 'A'`), o uso explícito de `COLLATE ascii_bin` obriga o MySQL a comparar os bytes exatos do token na cláusula `WHERE t.token = ? AND t.expira_em > NOW()`, garantindo determinismo criptográfico e máxima velocidade de busca por igualdade no índice único.
-4. **Controle Temporal Stateful (`expira_em DATETIME NOT NULL`):** Sincronizado no fuso horário `America/Sao_Paulo` (`SET time_zone = '-03:00'`), impõe janela de sessão de 2 horas a partir do login e permite revogação explícita imediata via `DELETE FROM tokens WHERE token = ?` na rota `POST /logout`.
+4. **Controle Temporal Stateful (`expira_em DATETIME NOT NULL`):** Calculado diretamente no SGBD via `DATE_ADD(NOW(), INTERVAL 2 HOUR)` sob `SET time_zone = '-03:00'` (eliminando deriva entre o relógio do PHP e o do MySQL), com limpeza de sessões vencidas no login via índice `idx_tokens_expira_em` e revogação explícita imediata via `DELETE FROM tokens WHERE token = ?` na rota `POST /logout`.
